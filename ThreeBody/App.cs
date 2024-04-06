@@ -8,13 +8,6 @@ using System.Runtime.InteropServices;
 
 namespace ThreeBody
 {
-    public struct Body
-    {
-        public Vector3 Position, Velocity, Acceleration;
-        public float Radius, Density;
-        public Vector4 Color;
-    }
-
     internal readonly struct PipelineSpec : IPipelineSpecification
     {
         public const PipelineFrontFace Winding = PipelineFrontFace.Clockwise;
@@ -32,8 +25,6 @@ namespace ThreeBody
 
         public App()
         {
-            mRegistry = new Registry();
-
             Load += OnLoad;
             Closing += OnClose;
             Update += OnUpdate;
@@ -190,6 +181,97 @@ namespace ThreeBody
         {
             using var loadEvent = Profiler.Event();
 
+            InitializeGraphics();
+            AddBodies();
+        }
+
+        private struct BodyDesc
+        {
+            public Vector3 Color, Position, Velocity;
+            public float Radius, Density;
+        }
+
+        // https://stackoverflow.com/questions/1335426/is-there-a-built-in-c-net-system-api-for-hsv-to-rgb
+        private static Vector3 HSVToRGB(Vector3 hsv)
+        {
+            int hi = Convert.ToInt32(float.Floor(hsv.X / 60)) % 6;
+            double f = hsv.X / 60 - float.Floor(hsv.X / 60);
+
+            float value = hsv.Z * 255;
+            int v = Convert.ToInt32(value);
+            int p = Convert.ToInt32(value * (1 - hsv.Y));
+            int q = Convert.ToInt32(value * (1 - f * hsv.Y));
+            int t = Convert.ToInt32(value * (1 - (1 - f) * hsv.Y));
+
+            return hi switch
+            {
+                0 => new Vector3(v, t, p),
+                1 => new Vector3(q, v, p),
+                2 => new Vector3(p, v, t),
+                3 => new Vector3(p, q, v),
+                4 => new Vector3(t, p, v),
+                _ => new Vector3(v, p, q)
+            } / 255f;
+        }
+
+        private static void AddBodies()
+        {
+            using var addBodiesEvent = Profiler.Event();
+            var registry = Physics.Registry;
+
+            const float bodyRadius = 1f;
+            const float bodyDensity = 3f / (4f * MathF.PI);
+            const float earthDensity = 1e+10f;
+            const float earthRadius = 10f;
+            const float orbitRadius = earthRadius + 10f;
+            const int bodyCount = 15;
+
+            var bodies = new List<BodyDesc>
+            {
+                new BodyDesc
+                {
+                    Color = Vector3.One,
+                    Position = Vector3.Zero,
+                    Velocity = Vector3.Zero,
+                    Radius = earthRadius,
+                    Density = earthDensity
+                },
+            };
+
+            float earthMass = Physics.SphereVolume(earthRadius) * earthDensity;
+            float orbitVelocity = MathF.Sqrt(Physics.G * earthMass / orbitRadius);
+
+            for (int i = 0; i < bodyCount; i++)
+            {
+                float angle = 2f * MathF.PI * i / bodyCount;
+                bodies.Add(new BodyDesc
+                {
+                    Color = HSVToRGB(new Vector3(angle * 180f / MathF.PI, 1f, 1f)),
+                    Position = new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0f) * orbitRadius,
+                    Velocity = new Vector3(-MathF.Sin(angle), MathF.Cos(angle), 0f) * orbitVelocity,
+                    Radius = bodyRadius,
+                    Density = bodyDensity
+                });
+            }
+
+            foreach (var desc in bodies)
+            {
+                ulong entity = registry.New();
+                ref var body = ref registry.Add<Body>(entity).Value;
+
+                body.Position = desc.Position;
+                body.Velocity = desc.Velocity;
+                body.Acceleration = Vector3.Zero;
+                body.Density = desc.Density;
+                body.Radius = desc.Radius;
+                body.Color = new Vector4(desc.Color, 1f);
+            }
+        }
+
+        private void InitializeGraphics()
+        {
+            using var initGraphicsEvent = Profiler.Event();
+
             var viewSize = RootView!.FramebufferSize;
             mViewSize = new Vector2(viewSize.X, viewSize.Y);
 
@@ -254,7 +336,7 @@ namespace ThreeBody
         private void OnClose()
         {
             using var closeEvent = Profiler.Event();
-            mRegistry.Clear();
+            Physics.Registry.Clear();
 
             var context = GraphicsContext;
             if (context != null)
@@ -280,8 +362,8 @@ namespace ThreeBody
 
             if (mCameraBuffer is not null)
             {
-                var cameraPosition = Vector3.UnitX * -3f;
-                var cameraDirection = Vector3.UnitX;
+                var cameraPosition = Vector3.UnitZ * -100f;
+                var cameraDirection = Vector3.UnitZ;
                 float aspectRatio = mViewSize.X / mViewSize.Y;
 
                 var view = math.LookAt(cameraPosition, cameraPosition + cameraDirection, Vector3.UnitY);
@@ -293,9 +375,23 @@ namespace ThreeBody
 
             if (mInstanceBuffer is not null)
             {
-                var instancePath = nameof(InstanceBufferData.Instances) + "[0]";
-                mInstanceBuffer.Set($"{instancePath}.{nameof(InstanceData.Model)}", math.TranslateMatrix(Matrix4x4.Identity));
-                mInstanceBuffer.Set($"{instancePath}.{nameof(InstanceData.Color)}", new Vector4(0f, 1f, 0f, 1f));
+                mInstanceCount = 0;
+
+                var registry = Physics.Registry;
+                foreach (ulong entity in registry.View(typeof(Body)))
+                {
+                    ref var body = ref registry.Get<Body>(entity).Value;
+
+                    var model = Matrix4x4.Identity;
+                    model = MatrixMath.Scale(model, Vector3.One * body.Radius);
+                    model = MatrixMath.Translate(model, body.Position);
+
+                    int instance = mInstanceCount++;
+                    var stub = $"{nameof(InstanceBufferData.Instances)}[{instance}].";
+
+                    mInstanceBuffer.Set(stub + nameof(InstanceData.Model), math.TranslateMatrix(model));
+                    mInstanceBuffer.Set(stub + nameof(InstanceData.Color), body.Color);
+                }
             }
         }
 
@@ -303,6 +399,7 @@ namespace ThreeBody
         {
             using var updateEvent = Profiler.Event();
 
+            Physics.Update(1f / 60f);
             UpdateBuffers();
         }
 
@@ -325,11 +422,10 @@ namespace ThreeBody
             mVertexBuffer!.BindVertices(renderInfo.CommandList, 0);
             mIndexBuffer!.BindIndices(renderInfo.CommandList, DeviceBufferIndexType.UInt32);
 
-            mRenderer!.RenderInstanced(renderInfo.CommandList, 0, mIndexCount, 0, 1);
+            mRenderer!.RenderInstanced(renderInfo.CommandList, 0, mIndexCount, 0, mInstanceCount);
             renderInfo.RenderTarget.EndRender(renderInfo.CommandList);
         }
 
-        private readonly Registry mRegistry;
         private Vector2 mViewSize;
 
         private ShaderLibrary? mLibrary;
@@ -337,7 +433,7 @@ namespace ThreeBody
         private IDeviceBuffer? mVertexBuffer, mIndexBuffer;
         private IRenderer? mRenderer;
         private IPipeline? mPipeline;
-        private int mIndexCount;
+        private int mIndexCount, mInstanceCount;
 
         private IDisposable? mSemaphore;
         private bool mSemaphoreTriggered;
