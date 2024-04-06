@@ -183,7 +183,7 @@ namespace ThreeBody
 
         private void OnFramebufferResize(Vector2D<int> size)
         {
-            mViewSize = new Vector2(size.X, size.X);
+            mViewSize = new Vector2(size.X, size.Y);
         }
 
         private void OnLoad()
@@ -213,8 +213,8 @@ namespace ThreeBody
             mCameraBuffer.Bind(mPipeline);
             mInstanceBuffer.Bind(mPipeline);
 
-            const int slices = 50;
-            const int stacks = 25;
+            const int slices = 100;
+            const int stacks = 50;
 
             var vertices = new List<Vector3>();
             var indices = new List<uint>();
@@ -294,8 +294,8 @@ namespace ThreeBody
             if (mInstanceBuffer is not null)
             {
                 var instancePath = nameof(InstanceBufferData.Instances) + "[0]";
-                mInstanceBuffer!.Set($"{instancePath}.{nameof(InstanceData.Model)}", math.TranslateMatrix(Matrix4x4.Identity));
-                mInstanceBuffer!.Set($"{instancePath}.{nameof(InstanceData.Color)}", Vector4.One);
+                mInstanceBuffer.Set($"{instancePath}.{nameof(InstanceData.Model)}", math.TranslateMatrix(Matrix4x4.Identity));
+                mInstanceBuffer.Set($"{instancePath}.{nameof(InstanceData.Color)}", new Vector4(0f, 1f, 0f, 1f));
             }
         }
 

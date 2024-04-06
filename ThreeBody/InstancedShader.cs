@@ -70,6 +70,6 @@ namespace ThreeBody
 
         [ShaderEntrypoint(ShaderStage.Fragment)]
         [return: Layout(Location = 0)]
-        public static Vector4<float> FragmentMain(FragmentInput input) => new Vector4<float>(1f, 0f, 0f, 1f);
+        public static Vector4<float> FragmentMain(FragmentInput input) => input.Color;
     }
 }

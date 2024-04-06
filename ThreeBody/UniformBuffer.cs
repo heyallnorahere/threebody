@@ -58,11 +58,28 @@ namespace ThreeBody
             }
         }
 
+        private IReflectionNode? FindNode(string name)
+        {
+            using var findNodeEvent = Profiler.Event();
+
+            var currentNode = mNode;
+            foreach (var segment in name.Split('.'))
+            {
+                currentNode = currentNode.Find(segment);
+                if (currentNode is null)
+                {
+                    break;
+                }
+            }
+
+            return currentNode;
+        }
+
         public bool Set<T>(string name, T data) where T : unmanaged
         {
             using var setEvent = Profiler.Event();
-            var node = mNode.Find(name);
 
+            var node = FindNode(name);
             if (node is null)
             {
                 return false;
@@ -79,7 +96,7 @@ namespace ThreeBody
         public unsafe T Get<T>(string name) where T : unmanaged
         {
             using var getEvent = Profiler.Event();
-            var node = mNode.Find(name);
+            var node = FindNode(name);
             T data = default;
 
             if (node is not null)
