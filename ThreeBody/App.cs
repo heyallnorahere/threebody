@@ -189,6 +189,7 @@ namespace ThreeBody
         {
             public Vector3 Color, Position, Velocity;
             public float Radius, Density;
+            public bool IsSolid;
         }
 
         // https://stackoverflow.com/questions/1335426/is-there-a-built-in-c-net-system-api-for-hsv-to-rgb
@@ -223,7 +224,8 @@ namespace ThreeBody
             const float bodyDensity = 3f / (4f * MathF.PI);
             const float earthDensity = 1e+10f;
             const float earthRadius = 10f;
-            const float orbitRadius = earthRadius + 10f;
+            const float geosynchronousOrbitRadius = 10f;
+            const float orbitRadius = earthRadius + geosynchronousOrbitRadius;
             const int bodyCount = 15;
 
             var bodies = new List<BodyDesc>
@@ -234,12 +236,13 @@ namespace ThreeBody
                     Position = Vector3.Zero,
                     Velocity = Vector3.Zero,
                     Radius = earthRadius,
-                    Density = earthDensity
+                    Density = earthDensity,
+                    IsSolid = true
                 },
             };
 
             float earthMass = Physics.SphereVolume(earthRadius) * earthDensity;
-            float orbitVelocity = MathF.Sqrt(Physics.G * earthMass / orbitRadius);
+            float orbitVelocity = MathF.Sqrt(Physics.G * earthMass / orbitRadius) * 1f;
 
             for (int i = 0; i < bodyCount; i++)
             {
@@ -250,7 +253,8 @@ namespace ThreeBody
                     Position = new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0f) * orbitRadius,
                     Velocity = new Vector3(-MathF.Sin(angle), MathF.Cos(angle), 0f) * orbitVelocity,
                     Radius = bodyRadius,
-                    Density = bodyDensity
+                    Density = bodyDensity,
+                    IsSolid = true
                 });
             }
 
@@ -265,6 +269,7 @@ namespace ThreeBody
                 body.Density = desc.Density;
                 body.Radius = desc.Radius;
                 body.Color = new Vector4(desc.Color, 1f);
+                body.IsSolid = desc.IsSolid;
             }
         }
 

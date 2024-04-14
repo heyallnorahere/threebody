@@ -15,11 +15,13 @@ namespace ThreeBody
             Radius = 1f;
             Density = 1f;
             Color = Vector4.One;
+            IsSolid = false;
         }
 
         public Vector3 Position, Velocity, Acceleration;
         public float Radius, Density;
         public Vector4 Color;
+        public bool IsSolid;
     }
 
     internal struct MassCache
@@ -41,6 +43,7 @@ namespace ThreeBody
         }
 
         public static Registry Registry => sRegistry;
+        public static event Action<ulong, ulong>? BodiesCollided;
 
         public static float SphereVolume(float radius) => MathF.Pow(radius, 3f) * MathF.PI * 4f / 3f;
         public static float GetBodyMass(ulong entity)
@@ -83,6 +86,8 @@ namespace ThreeBody
 
             foreach (var entity in entities)
             {
+                float mass = GetBodyMass(entity);
+
                 ref var body = ref sRegistry.Get<Body>(entity).Value;
                 foreach (var otherEntity in entities)
                 {
@@ -93,17 +98,56 @@ namespace ThreeBody
 
                     ref var otherBody = ref sRegistry.Get<Body>(otherEntity).Value;
                     var bodyToOther = otherBody.Position - body.Position;
-                    var direction = Vector3.Normalize(bodyToOther);
-                    var distanceSquared = bodyToOther.LengthSquared();
-
-                    if (MathF.Sqrt(distanceSquared) < float.Max(body.Radius, otherBody.Radius))
+                    float distanceSquared = bodyToOther.LengthSquared();
+                    if (distanceSquared < float.Epsilon)
                     {
                         continue;
                     }
 
-                    float mass = GetBodyMass(otherEntity);
-                    float g = G * mass / distanceSquared;
-                    body.Acceleration += g * direction;
+                    float otherMass = GetBodyMass(otherEntity);
+                    float distance = MathF.Sqrt(distanceSquared);
+                    var direction = bodyToOther / distance;
+
+                    if (distance > float.Max(body.Radius, otherBody.Radius))
+                    {
+                        float g = G * otherMass / distanceSquared;
+                        body.Acceleration += g * direction;
+                    }
+
+                    if (distance < body.Radius + otherBody.Radius)
+                    {
+                        BodiesCollided?.Invoke(entity, otherEntity);
+
+                        if (body.IsSolid && otherBody.IsSolid)
+                        {
+                            float velocity = body.Velocity.Length();
+                            float otherVelocity = otherBody.Velocity.Length();
+
+                            var velocityDirection = body.Velocity / velocity;
+                            var otherVelocityDirection = otherBody.Velocity / otherVelocity;
+
+                            float energyTransferred = Vector3.Dot(velocityDirection, direction);
+                            float otherEnergyTransferred = Vector3.Dot(otherVelocityDirection, -direction);
+
+                            var initialKinetic = body.Velocity * velocity * mass / 2f;
+                            var initialOtherKinetic = otherBody.Velocity * otherVelocity * otherMass / 2f;
+
+                            var kineticTransferred = energyTransferred * initialKinetic;
+                            var otherKineticTransferred = otherEnergyTransferred * initialOtherKinetic;
+
+                            var finalKinetic = initialKinetic - kineticTransferred + otherKineticTransferred;
+                            var finalOtherKinetic = initialOtherKinetic - otherKineticTransferred + kineticTransferred;
+
+                            var finalVelocitySquared = finalKinetic * 2f / mass;
+                            var finalOtherVelocitySquared = finalOtherKinetic * 2f / otherMass;
+
+                            float finalVelocitySquaredLength = finalVelocitySquared.Length();
+                            float finalOtherVelocitySquaredLength = finalVelocitySquared.Length();
+
+                            body.Velocity = finalVelocitySquaredLength < float.Epsilon ? Vector3.Zero : finalVelocitySquared * MathF.Pow(finalVelocitySquaredLength, -1f / 2f);
+                            otherBody.Velocity = finalOtherVelocitySquaredLength < float.Epsilon ? Vector3.Zero : finalOtherVelocitySquared * MathF.Pow(finalOtherVelocitySquaredLength, -1f / 2f);
+                        }
+                    }
                 }
             }
         }
