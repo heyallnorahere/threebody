@@ -242,7 +242,7 @@ namespace ThreeBody
             };
 
             float earthMass = Physics.SphereVolume(earthRadius) * earthDensity;
-            float orbitVelocity = MathF.Sqrt(Physics.G * earthMass / orbitRadius) * 1f;
+            float orbitVelocity = MathF.Sqrt(Physics.G * earthMass / orbitRadius);
 
             for (int i = 0; i < bodyCount; i++)
             {
@@ -251,7 +251,7 @@ namespace ThreeBody
                 {
                     Color = HSVToRGB(new Vector3(angle * 180f / MathF.PI, 1f, 1f)),
                     Position = new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0f) * orbitRadius,
-                    Velocity = new Vector3(-MathF.Sin(angle), MathF.Cos(angle), 0f) * orbitVelocity,
+                    Velocity = new Vector3(-MathF.Sin(angle), MathF.Cos(angle), 0f) * orbitVelocity * ((float)i / bodyCount),
                     Radius = bodyRadius,
                     Density = bodyDensity,
                     IsSolid = true

@@ -83,6 +83,7 @@ namespace ThreeBody
 
             var masses = new Dictionary<ulong, float>();
             var entities = sRegistry.View(typeof(Body));
+            var contactsComputed = new HashSet<(ulong, ulong)>();
 
             foreach (var entity in entities)
             {
@@ -108,45 +109,37 @@ namespace ThreeBody
                     float distance = MathF.Sqrt(distanceSquared);
                     var direction = bodyToOther / distance;
 
-                    if (distance > float.Max(body.Radius, otherBody.Radius))
-                    {
-                        float g = G * otherMass / distanceSquared;
-                        body.Acceleration += g * direction;
-                    }
-
+                    bool collided = false;
                     if (distance < body.Radius + otherBody.Radius)
                     {
-                        BodiesCollided?.Invoke(entity, otherEntity);
+                        var pair = (ulong.Max(entity, otherEntity), ulong.Min(entity, otherEntity));
+                        if (!contactsComputed.Contains(pair))
+                        {
+                            BodiesCollided?.Invoke(entity, otherEntity);
+
+                            if (body.IsSolid && otherBody.IsSolid)
+                            {
+                                var velocity = body.Velocity;
+                                var otherVelocity = otherBody.Velocity;
+
+                                float systemMass = mass + otherMass;
+                                body.Velocity -= (2f * otherMass / systemMass) * (Vector3.Dot(velocity - otherVelocity, -bodyToOther) / distanceSquared) * -bodyToOther;
+                                otherBody.Velocity -= (2f * mass / systemMass) * (Vector3.Dot(otherVelocity - velocity, bodyToOther) / distanceSquared) * bodyToOther;
+                            }
+
+                            contactsComputed.Add(pair);
+                        }
 
                         if (body.IsSolid && otherBody.IsSolid)
                         {
-                            float velocity = body.Velocity.Length();
-                            float otherVelocity = otherBody.Velocity.Length();
-
-                            var velocityDirection = body.Velocity / velocity;
-                            var otherVelocityDirection = otherBody.Velocity / otherVelocity;
-
-                            float energyTransferred = Vector3.Dot(velocityDirection, direction);
-                            float otherEnergyTransferred = Vector3.Dot(otherVelocityDirection, -direction);
-
-                            var initialKinetic = body.Velocity * velocity * mass / 2f;
-                            var initialOtherKinetic = otherBody.Velocity * otherVelocity * otherMass / 2f;
-
-                            var kineticTransferred = energyTransferred * initialKinetic;
-                            var otherKineticTransferred = otherEnergyTransferred * initialOtherKinetic;
-
-                            var finalKinetic = initialKinetic - kineticTransferred + otherKineticTransferred;
-                            var finalOtherKinetic = initialOtherKinetic - otherKineticTransferred + kineticTransferred;
-
-                            var finalVelocitySquared = finalKinetic * 2f / mass;
-                            var finalOtherVelocitySquared = finalOtherKinetic * 2f / otherMass;
-
-                            float finalVelocitySquaredLength = finalVelocitySquared.Length();
-                            float finalOtherVelocitySquaredLength = finalVelocitySquared.Length();
-
-                            body.Velocity = finalVelocitySquaredLength < float.Epsilon ? Vector3.Zero : finalVelocitySquared * MathF.Pow(finalVelocitySquaredLength, -1f / 2f);
-                            otherBody.Velocity = finalOtherVelocitySquaredLength < float.Epsilon ? Vector3.Zero : finalOtherVelocitySquared * MathF.Pow(finalOtherVelocitySquaredLength, -1f / 2f);
+                            collided = true;
                         }
+                    }
+
+                    if (!collided)
+                    {
+                        float g = G * otherMass / distanceSquared;
+                        body.Acceleration += g * direction;
                     }
                 }
             }
